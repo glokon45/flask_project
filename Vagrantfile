@@ -19,6 +19,7 @@ Vagrant.configure("2") do |config|
       v.cpus = 2
   end
 
+  config.vm.network "public_network", bridge: "wlan0"
   # public network => bridged
 
 end
