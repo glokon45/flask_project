@@ -15,6 +15,7 @@ from wtforms.validators import InputRequired
 
 from .models import db
 from .models import Article
+from .models import User
 
 # import sqlite3
 import os
@@ -42,6 +43,11 @@ class LoginForm(FlaskForm):
 class ArticleForm(FlaskForm):
     title = StringField("Title", validators=[InputRequired()])
     content = TextAreaField("Content")
+
+class ChangePasswordForm(FlaskForm):
+    old_password = StringField("Old Password", validators=[InputRequired()])
+    new_password = StringField("New Password", validators=[InputRequired()])
+
 
 ## CONTROLLERS
 
@@ -150,6 +156,8 @@ def edit_article(art_id):
                 flask("{} is missing".format(error), "alert-danger")
             return redirect(url_for("view_login"))
 
+## USER RELATED
+
 @flask_app.route("/login/", methods=["GET"])
 def view_login():
     login_form = LoginForm()
@@ -159,9 +167,11 @@ def view_login():
 def login_user():
     login_form = LoginForm(request.form)
     if login_form.validate():
-        if login_form.username.data == flask_app.config["USERNAME"] and \
-                login_form.password.data == flask_app.config["PASSWORD"]:
-            session["logged"] = True
+        user = User.query.filter_by(username = login_form.username.data).first()
+        if user and user.check_password(login_form.password.data):
+        # if login_form.username.data == flask_app.config["USERNAME"] and \
+        #         login_form.password.data == flask_app.config["PASSWORD"]:
+            session["logged"] = user.username
             flash("login succesfull", "alert-success")
             return redirect(url_for("view_admin"))
         else:
@@ -173,36 +183,39 @@ def login_user():
             flash("{} is missing".format(error), "alert-danger")
         return redirect(url_for("view_login"))
 
+@flask_app.route("/changepassword/", methods=["GET"])
+def view_change_password():
+    if "logged" not in session:
+        return redirect(url_for("view_login"))
+    form = ChangePasswordForm()
+    return render_template("change_password.jinja", form=form)
+
+@flask_app.route("/changepassword/", methods=["POST"])
+def change_password():
+    if "logged" not in session:
+        return redirect(url_for("view_login"))
+    form = ChangePasswordForm()
+    if form.validate():
+        user = User.query.filter_by(username = session["logged"]).first()
+        if user and user.check_password(form.old_password.data):
+            user.set_password(form.new_password.data)
+            db.session.add(user)
+            db.session.commit()
+            flash("Password changed!", "alert-success")
+            return redirect(url_for("view_admin"))
+        else:
+            flash("Invalid credentials", "alert-danger")
+            return render_template("change_password.jinja", form=form)
+    else:
+        for error in login_form.errors:
+            flash("{} is missing".format(error), "alert-danger")
+        return render_template("change_password.jinja", form=form)
+
 @flask_app.route("/logout/", methods=["POST"])
 def logout_user():
     session.pop("logged")
     flash("Logout successful")
     return redirect(url_for("view_welcome_page"))
-
-
-## UTILS
-#def connect_db():
-    #rv = sqlite3.connect(flask_app.config["DATABASE"])
-    #rv = sqlite3.connect(DATABASE)
-    #rv.row_factory = sqlite3.Row
-    #return rv
-
-#def get_db():
-    #if not hasattr(g, "sqlite_db"):
-        #g.sqlite_db = connect_db()
-    #return g.sqlite_db
-
-#@flask_app.teardown_appcontext
-#def close_db(error):
-    #if hasattr(g, "sqlite_db"):
-        #g.sqlite_db.close()
-
-#def init_db(app):
-    #with app.app_context():
-        #db = get_db()
-        #with open("mdblog/schema.sql", "r") as fp:
-            #db.cursor().executescript(fp.read())
-        #db.commit()
 
 ## CLI COMMAND
 
@@ -210,3 +223,10 @@ def init_db(app):
     with app.app_context():
         db.create_all()
         print("database inicialized")
+
+        default_user = User(username="admin")
+        default_user.set_password("admin")
+
+        db.session.add(default_user)
+        db.session.commit()
+        print("default user was created")
